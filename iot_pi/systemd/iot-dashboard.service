@@ -1,0 +1,14 @@
+[Unit]
+Description=Health monitor web dashboard (port 5000)
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+User=__USER__
+WorkingDirectory=__DIR__
+ExecStart=/usr/bin/python3 -u __DIR__/dashboard.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

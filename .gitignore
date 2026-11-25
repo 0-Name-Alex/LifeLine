@@ -1,0 +1,26 @@
+# Local raw archive backups (extracted source folders are tracked instead)
+*.zip
+
+# Python artifacts & runtime outputs
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+logs/
+results/
+ml_live_log.csv
+*.log
+
+# Compiled C/C++ test binaries
+*.exe
+*.out
+test_fd
+
+# OS / IDE metadata
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,46 @@
+{
+  "feature_names": [
+    "accel_x",
+    "accel_y",
+    "accel_z",
+    "accel_magnitude",
+    "accel_mean_10",
+    "accel_std_10",
+    "gas_raw",
+    "gas_mean_10",
+    "gas_std_10",
+    "gas_change_10",
+    "mpu_temp",
+    "temp_mean_10",
+    "temp_change_10",
+    "bpm_valid",
+    "valid_bpm",
+    "bpm_mean_10"
+  ],
+  "window_seconds": 20,
+  "training_sample_period_s": 2.0,
+  "class_labels": {
+    "0": "Normal",
+    "1": "Warning",
+    "2": "High Risk"
+  },
+  "train_sessions": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "test_sessions": [
+    7,
+    8,
+    9,
+    10
+  ],
+  "train_rows": 4222,
+  "test_rows": 1045,
+  "training_label_source": "legacy threshold statuses, NOT independently validated hazard labels",
+  "training_normal_source": "legacy rule status normal, NOT verified normal activity",
+  "temperature_warning": "mpu_temp is chip temperature, not body/ambient temperature"
+}

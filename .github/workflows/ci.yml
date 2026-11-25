@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compile and run ESP32 C++17 fall-detector tests
+        run: |
+          g++ -std=c++17 -Wall -Wextra -o /tmp/test_fd iot_esp32/tests/test_fall_detector.cpp
+          /tmp/test_fd
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install -r iot_pi/requirements.txt
+
+      - name: Check Python syntax across modules
+        run: |
+          python -m py_compile \
+            iot_pi/processor.py \
+            iot_pi/dashboard.py \
+            iot_pi/live_inference.py \
+            iot_pi/predictor.py \
+            iot_pi/features.py \
+            iot_pi/fall_detector.py \
+            iot_pi/train_models.py \
+            iot_pi/check_models.py \
+            iot_pi/watch_predictions.py \
+            health-dashboard/dashboard.py

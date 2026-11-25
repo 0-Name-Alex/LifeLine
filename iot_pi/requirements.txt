@@ -1,0 +1,12 @@
+# Python packages used by iot_pi.
+# On Raspberry Pi OS, install them with apt (see install.sh), not pip:
+#   sudo apt install -y python3-paho-mqtt python3-requests python3-flask \
+#        python3-numpy python3-pandas python3-sklearn python3-joblib
+# Only if you use a virtual environment instead: pip install -r requirements.txt
+paho-mqtt>=1.6,<3
+requests>=2.25
+flask>=2.2
+numpy>=1.24
+pandas>=1.5,<3
+scikit-learn>=1.2
+joblib>=1.2

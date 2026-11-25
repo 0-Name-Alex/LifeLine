@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Health Monitor</title>
+<!-- Chart.js is served from the Pi itself (static/), so it works without internet. CDN is a fallback. -->
+<script src="{{ url_for('static', filename='chart.umd.min.js') }}"></script>
+<script>window.Chart || document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"><\/script>')</script>
+<style>
+  :root {
+    --bg: #0f1419; --card: #1a2129; --line: #2a333d; --text: #e6edf3; --muted: #8b949e;
+    --ok: #3fb950; --warn: #d29922; --bad: #f85149; --info: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         background: var(--bg); color: var(--text); }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+           padding: 14px 20px; border-bottom: 1px solid var(--line); position: sticky; top: 0;
+           background: var(--bg); z-index: 5; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 10px; color: var(--muted); font-weight: 600; }
+  main { padding: 16px 20px 40px; max-width: 1400px; margin: 0 auto; }
+  .status { font-size: 13px; color: var(--muted); }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px;
+         background: var(--muted); vertical-align: middle; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .dot.off { background: var(--bad); }
+  .controls { display: flex; gap: 6px; flex-wrap: wrap; }
+  button, a.btn { background: var(--card); color: var(--text); border: 1px solid var(--line);
+           border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px; text-decoration: none; }
+  button.active { background: var(--info); color: #000; border-color: var(--info); }
+  #banner { display: none; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px;
+            background: rgba(248,81,73,.15); border: 1px solid var(--bad); font-weight: 600; }
+  .grid { display: grid; gap: 14px; }
+  .tiles { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 16px; }
+  .charts { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); margin-bottom: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .tile .label { font-size: 13px; color: var(--muted); }
+  .tile .value { font-size: 34px; font-weight: 700; margin: 6px 0 4px; }
+  .tile .unit { font-size: 15px; color: var(--muted); font-weight: 400; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 12px; font-weight: 600; }
+  .b-ok { background: rgba(63,185,80,.18); color: var(--ok); }
+  .b-warn { background: rgba(210,153,34,.2); color: var(--warn); }
+  .b-bad { background: rgba(248,81,73,.2); color: var(--bad); }
+  .b-muted { background: rgba(139,148,158,.18); color: var(--muted); }
+  .tile.alert { border-color: var(--bad); }
+  .tile.warn { border-color: var(--warn); }
+  .board { grid-template-columns: repeat(3, 1fr); margin-bottom: 14px; }
+  @media (max-width: 800px) { .board { grid-template-columns: 1fr; } }
+  .col h2 { display: flex; justify-content: space-between; align-items: center; }
+  .col.low { border-top: 3px solid var(--ok); } .col.medium { border-top: 3px solid var(--warn); }
+  .col.high { border-top: 3px solid var(--bad); }
+  .wcard { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-top: 8px; }
+  .wcard.fall { border-color: var(--bad); background: rgba(248,81,73,.08); }
+  .wcard.offline { opacity: .5; }
+  .wcard .wid { font-weight: 700; } .wcard .vals { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .empty { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  #banner.warn { background: rgba(210,153,34,.15); border-color: var(--warn); }
+  .note { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .chart-box { position: relative; height: 230px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; }
+  .scroll { max-height: 420px; overflow-y: auto; }
+  @media (max-width: 500px) { .charts { grid-template-columns: 1fr; } main { padding: 12px; } }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Health Monitor</h1>
+    <div class="status"><span id="dot" class="dot"></span><span id="statusText">Connecting…</span> <span id="ver" class="note"></span></div>
+  </div>
+  <div class="controls" id="ranges">
+    <button data-min="5">5 min</button>
+    <button data-min="15" class="active">15 min</button>
+    <button data-min="60">1 hour</button>
+    <button data-min="360">6 hours</button>
+    <button data-min="1440">24 hours</button>
+    <a class="btn" id="dl" href="/download.csv?minutes=15">⬇ CSV (range)</a>
+    <a class="btn" href="/download.csv?minutes=0">⬇ Full log</a>
+  </div>
+</header>
+
+<main>
+  <div id="banner"></div>
+
+  <!-- Live values -->
+  <div class="grid tiles">
+    <div class="card tile" id="t-bpm"><div class="label">❤️ Heart rate</div>
+      <div class="value"><span id="v-bpm">--</span> <span class="unit">BPM</span></div>
+      <span class="badge b-muted" id="s-bpm">--</span></div>
+    <div class="card tile" id="t-gas"><div class="label">💨 Gas level</div>
+      <div class="value"><span id="v-gas">--</span> <span class="unit">raw</span></div>
+      <span class="badge b-muted" id="s-gas">--</span></div>
+    <div class="card tile" id="t-temp"><div class="label">🌡️ Temperature</div>
+      <div class="value"><span id="v-temp">--</span> <span class="unit">°C</span></div>
+      <span class="badge b-muted" id="s-temp">--</span>
+      <div class="note">MPU6050 chip temperature, not body temperature</div></div>
+    <div class="card tile" id="t-fall"><div class="label">🏃 Motion</div>
+      <div class="value"><span id="v-acc">--</span> <span class="unit">g</span></div>
+      <span class="badge b-muted" id="s-fall">--</span></div>
+    <div class="card tile"><div class="label">☝️ Finger on sensor</div>
+      <div class="value" id="v-finger">--</div>
+      <span class="note" id="v-axes">x -- / y -- / z --</span></div>
+  </div>
+
+  <!-- Workers by ML risk -->
+  <div class="grid board">
+    <div class="card col low"><h2>🟢 Low risk <span class="badge b-ok" id="n-low">0</span></h2><div id="w-low"></div></div>
+    <div class="card col medium"><h2>🟡 Medium risk <span class="badge b-warn" id="n-medium">0</span></h2><div id="w-medium"></div></div>
+    <div class="card col high"><h2>🔴 High risk <span class="badge b-bad" id="n-high">0</span></h2><div id="w-high"></div></div>
+  </div>
+  <div class="note" style="margin:-6px 0 14px">Risk from the ML model in live_inference.py (advisory: Normal = low, Warning = medium, High Risk = high). A suspected fall or man-down always puts the worker in High.</div>
+
+  <!-- Time series -->
+  <div class="grid charts">
+    <div class="card"><h2>Heart rate (BPM)</h2><div class="chart-box"><canvas id="c-bpm"></canvas></div></div>
+    <div class="card"><h2>Gas level (raw ADC 0-4095)</h2><div class="chart-box"><canvas id="c-gas"></canvas></div></div>
+    <div class="card"><h2>Temperature (°C)</h2><div class="chart-box"><canvas id="c-temp"></canvas></div></div>
+    <div class="card"><h2>Acceleration magnitude (g) — spikes = possible fall</h2><div class="chart-box"><canvas id="c-acc"></canvas></div></div>
+  </div>
+
+  <!-- Analytics -->
+  <div class="grid charts">
+    <div class="card"><h2>Summary for selected range</h2>
+      <table><thead><tr><th>Parameter</th><th>Min</th><th>Avg</th><th>Max</th></tr></thead>
+      <tbody id="statsBody"></tbody></table>
+      <div class="note" id="statsNote"></div></div>
+    <div class="card"><h2>Alerts in selected range</h2>
+      <table><thead><tr><th>Alert</th><th>Episodes</th><th>% of time</th></tr></thead>
+      <tbody id="alertBody"></tbody></table></div>
+    <div class="card"><h2>Heart rate zones (time spent)</h2><div class="chart-box"><canvas id="c-zones"></canvas></div></div>
+    <div class="card"><h2>Activity level</h2><div class="chart-box"><canvas id="c-activity"></canvas></div></div>
+  </div>
+
+  <div class="card"><h2>Alert log (last 24 hours)</h2>
+    <div class="scroll"><table><thead><tr><th>Started</th><th>Alert</th><th>Duration</th><th>Peak</th></tr></thead>
+    <tbody id="eventsBody"><tr><td colspan="4">No alerts yet</td></tr></tbody></table></div></div>
+</main>
+
+<script>
+const TH = {{ thresholds | tojson }};
+let minutes = 15;
+
+Chart.defaults.color = '#8b949e';
+Chart.defaults.borderColor = '#2a333d';
+Chart.defaults.animation = false;
+
+function lineChart(id, label, color, refLines = [], yOpts = {}) {
+  const datasets = [{ label, data: [], borderColor: color, backgroundColor: color + '33',
+                      fill: true, pointRadius: 0, borderWidth: 2, tension: 0.25, spanGaps: false }];
+  for (const r of refLines) {
+    datasets.push({ label: r.label, data: [], borderColor: r.color, borderDash: [6, 4],
+                    pointRadius: 0, borderWidth: 1.5, fill: false, ref: r.value });
+  }
+  return new Chart(document.getElementById(id), {
+    type: 'line', data: { labels: [], datasets },
+    options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: refLines.length > 0, labels: { boxWidth: 12 } } },
+      scales: { x: { ticks: { maxTicksLimit: 8, autoSkip: true } }, y: yOpts } }
+  });
+}
+
+const charts = {
+  bpm: lineChart('c-bpm', 'BPM', '#f85149', [{ label: `Alert > ${TH.bpm_high}`, value: TH.bpm_high, color: '#d29922' }]),
+  gas: lineChart('c-gas', 'Gas', '#a371f7', [
+    { label: `Warn ${TH.gas_warn}`, value: TH.gas_warn, color: '#d29922' },
+    { label: `Danger ${TH.gas_danger}`, value: TH.gas_danger, color: '#f85149' }], { min: 0, max: 4095 }),
+  temp: lineChart('c-temp', '°C', '#58a6ff', [
+    { label: `High ${TH.temp_high}`, value: TH.temp_high, color: '#f85149' },
+    { label: `Low ${TH.temp_low}`, value: TH.temp_low, color: '#58a6ff' }]),
+  acc: lineChart('c-acc', 'g', '#3fb950', [{ label: `Impact ${TH.impact_g} g`, value: TH.impact_g, color: '#f85149' }], { min: 0 }),
+};
+
+const zonesChart = new Chart(document.getElementById('c-zones'), {
+  type: 'bar', data: { labels: [], datasets: [{ data: [],
+    backgroundColor: ['#58a6ff', '#3fb950', '#d29922', '#f85149'] }] },
+  options: { maintainAspectRatio: false, plugins: { legend: { display: false },
+    tooltip: { callbacks: { label: c => `${c.raw} %` } } }, scales: { y: { min: 0, max: 100, title: { display: true, text: '% of time' } } } }
+});
+const activityChart = new Chart(document.getElementById('c-activity'), {
+  type: 'doughnut', data: { labels: [], datasets: [{ data: [], backgroundColor: ['#8b949e', '#58a6ff', '#3fb950'], borderWidth: 0 }] },
+  options: { maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+});
+
+function setChart(ch, labels, values) {
+  ch.data.labels = labels;
+  ch.data.datasets[0].data = values;
+  for (const ds of ch.data.datasets.slice(1)) ds.data = labels.map(() => ds.ref);
+  ch.update();
+}
+
+function badge(id, text, cls) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'badge ' + cls;
+}
+
+async function getJSON(url) {
+  const r = await fetch(url);
+  return r.json();
+}
+
+async function refreshLatest() {
+  try {
+    const d = await getJSON('/api/latest');
+    const dot = document.getElementById('dot');
+    if (!d.ok) {
+      dot.className = 'dot off';
+      document.getElementById('statusText').textContent = d.reason;
+      return;
+    }
+    dot.className = 'dot ' + (d.online ? 'on' : 'off');
+    document.getElementById('statusText').textContent = d.online
+      ? `Live · last reading ${d.timestamp}`
+      : `Sensor offline · last reading ${d.age_sec}s ago (${d.timestamp})`;
+
+    const alerts = [];
+    // Heart rate
+    document.getElementById('v-bpm').textContent = d.finger ? d.avg_bpm.toFixed(0) : '--';
+    if (!d.finger) badge('s-bpm', 'No finger', 'b-muted');
+    else if (d.bpm_alert_status) { badge('s-bpm', 'HIGH', 'b-bad'); alerts.push(`High heart rate (${d.avg_bpm.toFixed(0)} BPM)`); }
+    else badge('s-bpm', 'Normal', 'b-ok');
+    // Gas
+    document.getElementById('v-gas').textContent = d.gas_raw.toFixed(0);
+    if (d.gas_status == 2) { badge('s-gas', 'DANGER', 'b-bad'); alerts.push('Gas level DANGER'); }
+    else if (d.gas_status == 1) { badge('s-gas', 'Warning', 'b-warn'); alerts.push('Gas level warning'); }
+    else badge('s-gas', 'Good', 'b-ok');
+    // Temperature
+    document.getElementById('v-temp').textContent = d.mpu_temp.toFixed(1);
+    if (d.temp_status == 1) { badge('s-temp', 'HIGH', 'b-bad'); alerts.push('High temperature'); }
+    else if (d.temp_status == 2) { badge('s-temp', 'LOW', 'b-warn'); alerts.push('Low temperature'); }
+    else badge('s-temp', 'Normal', 'b-ok');
+    // Motion / fall
+    document.getElementById('ver').textContent = d.version ? `· dashboard ${d.version}` : '';
+    // During an impact/fall show the ESP32's peak g (the 1 s snapshot misses the spike)
+    const showPeak = d.ml_peak_g != null && d.ml_peak_g > d.accel_g;
+    document.getElementById('v-acc').textContent = (showPeak ? d.ml_peak_g : d.accel_g).toFixed(2);
+    let fallWarn = false;
+    // Fall state comes from live_inference.py (ml_live_log.csv), not from the 1 s accel snapshot.
+    let fallAlarm = false;
+    const fs = d.ml_online ? d.ml_fall_state : null;
+    const tilt = d.ml_tilt_deg != null ? ` · tilt ${d.ml_tilt_deg.toFixed(0)}°` : '';
+    if (fs === 'man_down') {
+      badge('s-fall', 'MAN DOWN', 'b-bad'); fallAlarm = true;
+      alerts.push(`MAN DOWN: lying still ${d.ml_still_s != null ? d.ml_still_s.toFixed(0) : '?'} s${tilt}`);
+    } else if (fs === 'fall_suspected') {
+      badge('s-fall', 'FALL SUSPECTED', 'b-bad'); fallAlarm = true;
+      alerts.push(`Fall suspected (${d.ml_fall_reason || 'impact then lying still'})${tilt}`);
+    } else if (fs === 'impact') {
+      badge('s-fall', 'IMPACT', 'b-warn'); fallWarn = true;
+      alerts.push(`Impact${d.ml_peak_g != null ? ' ' + d.ml_peak_g.toFixed(1) + ' g' : ''}, checking for a fall (10 s)${tilt}`);
+    }
+    else if (fs === 'recovered') badge('s-fall', 'Recovered', 'b-ok');
+    else if (fs === 'unknown') badge('s-fall', 'Sensor fault?', 'b-warn');
+    else if (fs === 'ok') badge('s-fall', Math.abs(d.accel_g - 1) < 0.05 ? 'Still' : 'Moving', 'b-ok');
+    else badge('s-fall', 'Fall detection offline', 'b-muted');  // live_inference.py not running
+    // Finger + axes
+    document.getElementById('v-finger').textContent = d.finger ? 'Yes' : 'No';
+    document.getElementById('v-axes').textContent =
+      `x ${d.accel_x.toFixed(2)} / y ${d.accel_y.toFixed(2)} / z ${d.accel_z.toFixed(2)} m/s²`;
+
+    for (const [tile, on] of [['t-bpm', d.bpm_alert_status], ['t-gas', d.gas_status], ['t-temp', d.temp_status], ['t-fall', fallAlarm]])
+      document.getElementById(tile).classList.toggle('alert', !!on && (d.online || tile === 't-fall'));
+    document.getElementById('t-fall').classList.toggle('warn', fallWarn);
+
+    const banner = document.getElementById('banner');
+    banner.style.display = alerts.length && (d.online || fallAlarm) ? 'block' : 'none';
+    // amber when the only alert is an impact still being checked, red otherwise
+    banner.classList.toggle('warn', fallWarn && alerts.length === 1);
+    banner.textContent = '⚠️ ' + alerts.join(' · ');
+  } catch (e) {
+    document.getElementById('dot').className = 'dot off';
+    document.getElementById('statusText').textContent = 'Dashboard server unreachable';
+  }
+}
+
+async function refreshHistory() {
+  try {
+    const [h, s, ev] = await Promise.all([
+      getJSON(`/api/history?minutes=${minutes}`), getJSON(`/api/stats?minutes=${minutes}`), getJSON('/api/events')]);
+
+    const labels = h.t.map(t => minutes > 360 ? t.slice(5, 16) : t.slice(11));
+    setChart(charts.bpm, labels, h.bpm);
+    setChart(charts.gas, labels, h.gas);
+    setChart(charts.temp, labels, h.temp);
+    setChart(charts.acc, labels, h.accel_g);
+
+    const row = (name, st, unit) => st
+      ? `<tr><td>${name}</td><td>${st.min} ${unit}</td><td>${st.avg} ${unit}</td><td>${st.max} ${unit}</td></tr>`
+      : `<tr><td>${name}</td><td colspan="3">no data</td></tr>`;
+    document.getElementById('statsBody').innerHTML =
+      row('Heart rate', s.bpm, 'BPM') + row('Gas', s.gas, '') + row('Temperature', s.temp, '°C') + row('Acceleration', s.accel_g, 'g');
+    document.getElementById('statsNote').textContent =
+      `${s.samples} readings · finger on sensor ${s.finger_pct}% of the time`;
+
+    document.getElementById('alertBody').innerHTML = Object.entries(s.alerts).map(([k, v]) =>
+      `<tr><td>${k}</td><td>${v.events ? `<span class="badge b-bad">${v.events}</span>` : '0'}</td><td>${v.pct}%</td></tr>`).join('');
+
+    const zTotal = Object.values(s.bpm_zones).reduce((a, b) => a + b, 0) || 1;
+    zonesChart.data.labels = Object.keys(s.bpm_zones);
+    zonesChart.data.datasets[0].data = Object.values(s.bpm_zones).map(v => +(100 * v / zTotal).toFixed(1));
+    zonesChart.update();
+    activityChart.data.labels = Object.keys(s.activity);
+    activityChart.data.datasets[0].data = Object.values(s.activity);
+    activityChart.update();
+
+    document.getElementById('eventsBody').innerHTML = ev.length ? ev.map(e =>
+      `<tr><td>${e.start}</td><td>${e.type}</td><td>${e.duration_sec}s</td><td>${e.peak} ${e.unit}</td></tr>`).join('')
+      : '<tr><td colspan="4">No alerts in the last 24 hours 🎉</td></tr>';
+  } catch (e) { console.error(e); }
+}
+
+document.querySelectorAll('#ranges button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#ranges button').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  minutes = +b.dataset.min;
+  document.getElementById('dl').href = `/download.csv?minutes=${minutes}`;
+  refreshHistory();
+}));
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = (v, d = 0) => v == null ? '--' : (+v).toFixed(d);
+const FALL_BADGE = { man_down: ['MAN DOWN', 'b-bad'], fall_suspected: ['FALL SUSPECTED', 'b-bad'],
+  impact: ['IMPACT', 'b-warn'], recovered: ['Recovered', 'b-ok'], unknown: ['Sensor fault?', 'b-warn'], ok: ['OK', 'b-ok'] };
+
+async function refreshWorkers() {
+  try {
+    const b = await getJSON('/api/workers');
+    for (const col of ['low', 'medium', 'high']) {
+      const list = b[col] || [];
+      document.getElementById('n-' + col).textContent = list.length;
+      document.getElementById('w-' + col).innerHTML = list.length ? list.map(w => {
+        const fall = w.fall_state === 'fall_suspected' || w.fall_state === 'man_down';
+        const [fl, fc] = FALL_BADGE[w.fall_state] || [w.fall_state, 'b-muted'];
+        const bpm = w.finger ? num(w.avg_bpm) + ' BPM' : 'no finger';
+        return `<div class="wcard ${fall ? 'fall' : ''} ${w.online ? '' : 'offline'}">
+          <div><span class="wid">${esc(w.worker_id)}</span> <span class="badge ${fc}">${esc(fl)}</span>
+            ${w.anomaly ? '<span class="badge b-muted">anomaly</span>' : ''}
+            ${w.online ? '' : `<span class="badge b-muted">offline ${w.age_sec}s</span>`}</div>
+          <div class="vals">❤️ ${bpm} · 💨 gas ${num(w.gas)} · 🌡️ ${num(w.mpu_temp, 1)} °C</div>
+          <div class="vals">🏃 ${num(w.accel_g, 2)} g · tilt ${num(w.tilt_deg)}° · ${esc(w.reason)} · ${w.last_seen}</div>
+        </div>`;
+      }).join('') : '<div class="empty">No workers</div>';
+    }
+  } catch (e) { console.error(e); }
+}
+
+refreshLatest(); refreshHistory(); refreshWorkers();
+setInterval(refreshLatest, 2000);
+setInterval(refreshWorkers, 2000);
+setInterval(refreshHistory, 5000);
+</script>
+</body>
+</html>

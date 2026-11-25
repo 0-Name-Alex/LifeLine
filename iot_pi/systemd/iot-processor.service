@@ -1,0 +1,14 @@
+[Unit]
+Description=Health monitor processor (MQTT, CSV, ThingSpeak, LEDs)
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+User=__USER__
+WorkingDirectory=__DIR__
+ExecStart=/usr/bin/python3 -u __DIR__/processor.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
