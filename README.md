@@ -87,8 +87,9 @@ export MQTT_PASSWORD="your_mqtt_password"
 
 ---
 
-## 👤 Author & License
+## 👤 Authors, Collaborators & License
 
-Designed and engineered by **Dhayananth J ([`@0-Name-Alex`](https://github.com/0-Name-Alex))** • [dhayananth.me](https://dhayananth.me)
+- **Creator & Lead Engineer**: **Dhayananth J ([`@0-Name-Alex`](https://github.com/0-Name-Alex))** • [dhayananth.me](https://dhayananth.me)
+- **Collaborator**: **Devarasetty Kuldeep ([`@DevarasettyKuldeep`](https://github.com/DevarasettyKuldeep))**
 
 Licensed under the [MIT License](LICENSE).
