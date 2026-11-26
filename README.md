@@ -90,6 +90,6 @@ export MQTT_PASSWORD="your_mqtt_password"
 ## 👤 Authors, Collaborators & License
 
 - **Creator & Lead Engineer**: **Dhayananth J ([`@0-Name-Alex`](https://github.com/0-Name-Alex))** • [dhayananth.me](https://dhayananth.me)
-- **Collaborator**: **Devarasetty Kuldeep ([`@DevarasettyKuldeep`](https://github.com/DevarasettyKuldeep))**
+- **Collaborators**: **Devarasetty Kuldeep ([`@DevarasettyKuldeep`](https://github.com/DevarasettyKuldeep))** · **[`@Anbu-KK`](https://github.com/Anbu-KK)**
 
 Licensed under the [MIT License](LICENSE).
